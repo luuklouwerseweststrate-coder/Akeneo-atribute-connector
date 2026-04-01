@@ -157,7 +157,7 @@ export default function ReviewStep({
                 <th className="text-left px-4 py-3 font-medium text-gray-600 sticky left-0 bg-gray-50 z-10 min-w-[100px]">
                   SKU
                 </th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600 sticky left-[100px] bg-gray-50 z-10 min-w-[250px]">
+                <th className="text-left px-4 py-3 font-medium text-gray-600 sticky left-[100px] bg-gray-50 z-10 min-w-[350px] max-w-[500px]">
                   Producttitel
                 </th>
                 {filteredColumns.map((col) => (
@@ -182,7 +182,7 @@ export default function ReviewStep({
                   <td className="px-4 py-2 font-mono text-xs text-gray-700 sticky left-0 bg-white z-10">
                     {row.sku}
                   </td>
-                  <td className="px-4 py-2 text-gray-700 sticky left-[100px] bg-white z-10 max-w-[250px] truncate">
+                  <td className="px-4 py-2 text-gray-700 sticky left-[100px] bg-white z-10 min-w-[350px] max-w-[500px] whitespace-normal break-words text-xs leading-snug">
                     {row._product?.["erp_name-nl_NL"] ||
                       row._product?.["variation_name-nl_NL"] ||
                       "-"}
