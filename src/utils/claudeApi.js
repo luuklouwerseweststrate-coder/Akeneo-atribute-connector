@@ -3,6 +3,16 @@ import { LABELS } from "../constants";
 const BATCH_SIZE = 6;
 const MODEL = "claude-sonnet-4-20250514";
 
+// Sonnet 4 pricing (USD per 1M tokens)
+const PRICE_INPUT = 3;
+const PRICE_OUTPUT = 15;
+
+export function calculateCost(usage) {
+  const inputCost = (usage.inputTokens / 1_000_000) * PRICE_INPUT;
+  const outputCost = (usage.outputTokens / 1_000_000) * PRICE_OUTPUT;
+  return { inputCost, outputCost, totalCost: inputCost + outputCost };
+}
+
 function buildPrompt(products, selectedColumns) {
   const columnList = selectedColumns
     .map((col) => `${col} (${LABELS[col] || col})`)
@@ -78,9 +88,10 @@ export async function extractAttributes(
 
   const allResults = [];
   const errors = [];
+  const usage = { inputTokens: 0, outputTokens: 0 };
 
   for (let i = 0; i < batches.length; i++) {
-    onProgress({ current: i + 1, total: batches.length });
+    onProgress({ current: i + 1, total: batches.length, usage: { ...usage } });
 
     try {
       const prompt = buildPrompt(batches[i], selectedColumns);
@@ -105,6 +116,13 @@ export async function extractAttributes(
       }
 
       const data = await response.json();
+
+      // Track token usage
+      if (data.usage) {
+        usage.inputTokens += data.usage.input_tokens || 0;
+        usage.outputTokens += data.usage.output_tokens || 0;
+      }
+
       const text = data.content?.[0]?.text || "[]";
 
       const cleaned = text.replace(/```json?\s*/g, "").replace(/```\s*/g, "").trim();
@@ -123,5 +141,5 @@ export async function extractAttributes(
     }
   }
 
-  return { results: allResults, errors };
+  return { results: allResults, errors, usage };
 }

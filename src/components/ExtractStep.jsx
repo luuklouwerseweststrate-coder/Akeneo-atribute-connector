@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { extractAttributes } from "../utils/claudeApi";
+import { extractAttributes, calculateCost } from "../utils/claudeApi";
 
 export default function ExtractStep({ products, selectedColumns, apiKey, onDone }) {
   const [progress, setProgress] = useState({ current: 0, total: 0 });
@@ -72,6 +72,14 @@ export default function ExtractStep({ products, selectedColumns, apiKey, onDone 
           Batch {progress.current} van {progress.total}{" "}
           <span className="text-gray-400">({pct}%)</span>
         </p>
+
+        {progress.usage && progress.usage.inputTokens > 0 && (
+          <div className="mt-4 flex items-center justify-center gap-4 text-xs text-gray-400">
+            <span>{(progress.usage.inputTokens + progress.usage.outputTokens).toLocaleString()} tokens</span>
+            <span>&middot;</span>
+            <span>${calculateCost(progress.usage).totalCost.toFixed(4)}</span>
+          </div>
+        )}
 
         {status === "error" && (
           <div className="mt-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">

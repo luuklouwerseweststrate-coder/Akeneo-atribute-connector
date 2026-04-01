@@ -24,6 +24,7 @@ export default function App() {
   );
   const [results, setResults] = useState([]);
   const [errors, setErrors] = useState([]);
+  const [usage, setUsage] = useState(null);
 
   const handleFileLoaded = useCallback((data) => {
     setFileData(data);
@@ -44,6 +45,7 @@ export default function App() {
   const handleExtractionDone = useCallback((res) => {
     setResults(res.results);
     setErrors(res.errors);
+    setUsage(res.usage || null);
     setStep(5);
   }, []);
 
@@ -135,6 +137,7 @@ export default function App() {
               products={fileData.products}
               selectedColumns={selectedColumns}
               errors={errors}
+              usage={usage}
               onDone={handleReviewDone}
             />
           )}
@@ -148,6 +151,7 @@ export default function App() {
                 setResults([]);
                 setErrors([]);
                 setSelectedColumns([]);
+                setUsage(null);
               }}
             />
           )}

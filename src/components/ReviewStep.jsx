@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { LABELS } from "../constants";
+import { calculateCost } from "../utils/claudeApi";
 
 const CONF_COLORS = {
   high: "text-conf-high",
@@ -22,6 +23,7 @@ export default function ReviewStep({
   products,
   selectedColumns,
   errors,
+  usage,
   onDone,
 }) {
   const [data, setData] = useState(() => {
@@ -97,6 +99,22 @@ export default function ReviewStep({
                 </span>
               )}
             </p>
+            {usage && usage.inputTokens > 0 && (() => {
+              const cost = calculateCost(usage);
+              return (
+                <div className="mt-2 flex items-center gap-3 text-xs">
+                  <span className="px-2 py-1 bg-blue-50 text-accent rounded-md font-medium">
+                    {usage.inputTokens.toLocaleString()} input tokens
+                  </span>
+                  <span className="px-2 py-1 bg-blue-50 text-accent rounded-md font-medium">
+                    {usage.outputTokens.toLocaleString()} output tokens
+                  </span>
+                  <span className="px-2 py-1 bg-green-50 text-green-700 rounded-md font-semibold">
+                    ${cost.totalCost.toFixed(4)}
+                  </span>
+                </div>
+              );
+            })()}
           </div>
           <div className="flex items-center gap-2">
             {[
