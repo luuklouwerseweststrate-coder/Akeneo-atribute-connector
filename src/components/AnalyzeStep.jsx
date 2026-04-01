@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { analyzeColumns } from "../utils/columnAnalyzer";
+import { estimateCost } from "../utils/claudeApi";
 import { LABELS } from "../constants";
 
 export default function AnalyzeStep({ fileData, onColumnsSelected, onBack }) {
@@ -168,8 +169,24 @@ export default function AnalyzeStep({ fileData, onColumnsSelected, onBack }) {
         )}
       </div>
 
-      {/* Continue */}
-      <div className="flex justify-end">
+      {/* Cost estimate + Continue */}
+      <div className="flex items-center justify-between">
+        {selected.size > 0 && (() => {
+          const est = estimateCost(products, [...selected], useDescription && hasDescriptions);
+          return (
+            <div className="flex items-center gap-3 text-xs text-gray-500">
+              <span className="px-2 py-1 bg-gray-100 rounded-md">
+                {est.batches} batches
+              </span>
+              <span className="px-2 py-1 bg-gray-100 rounded-md">
+                ~{(est.inputTokens + est.outputTokens).toLocaleString()} tokens
+              </span>
+              <span className="px-2 py-1 bg-amber-50 text-amber-700 rounded-md font-medium">
+                ~${est.totalCost.toFixed(3)}
+              </span>
+            </div>
+          );
+        })()}
         <button
           onClick={() => onColumnsSelected([...selected], useDescription && hasDescriptions)}
           disabled={selected.size === 0}

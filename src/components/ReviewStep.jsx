@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { LABELS } from "../constants";
 import { calculateCost } from "../utils/claudeApi";
 
@@ -8,6 +8,8 @@ const CONF_COLORS = {
   low: "text-conf-low",
   empty: "text-conf-empty",
 };
+
+const PAGE_SIZE = 25;
 
 function ConfidenceDot({ level }) {
   return (
@@ -26,20 +28,29 @@ export default function ReviewStep({
   usage,
   onDone,
 }) {
-  const [data, setData] = useState(() => {
+  // Index data by SKU for O(1) lookups
+  const [dataMap, setDataMap] = useState(() => {
     const productMap = {};
     for (const p of products) {
       if (p.sku) productMap[p.sku] = p;
     }
 
-    return results.map((r) => ({
-      ...r,
-      _product: productMap[r.sku] || {},
-    }));
+    const map = new Map();
+    for (const r of results) {
+      map.set(r.sku, {
+        ...r,
+        _product: productMap[r.sku] || {},
+      });
+    }
+    return map;
   });
+
+  // Keep ordered SKU list for stable rendering
+  const skuOrder = useMemo(() => results.map((r) => r.sku), [results]);
 
   const [filter, setFilter] = useState("all");
   const [colSearch, setColSearch] = useState("");
+  const [page, setPage] = useState(0);
 
   const filteredColumns = useMemo(() => {
     if (!colSearch.trim()) return selectedColumns;
@@ -51,37 +62,59 @@ export default function ReviewStep({
     );
   }, [selectedColumns, colSearch]);
 
-  const filteredData = useMemo(() => {
-    if (filter === "all") return data;
-    if (filter === "issues") {
-      return data.filter((r) =>
-        selectedColumns.some((col) => {
+  const filteredSkus = useMemo(() => {
+    if (filter === "all") return skuOrder;
+    return skuOrder.filter((sku) => {
+      const r = dataMap.get(sku);
+      if (!r) return false;
+      if (filter === "issues") {
+        return selectedColumns.some((col) => {
           const conf = r.attributes?.[col]?.confidence;
           return conf === "low" || conf === "empty";
-        })
-      );
-    }
-    // clean
-    return data.filter((r) =>
-      selectedColumns.every((col) => {
+        });
+      }
+      // clean
+      return selectedColumns.every((col) => {
         const conf = r.attributes?.[col]?.confidence;
         return conf === "high" || conf === "medium";
-      })
-    );
-  }, [data, filter, selectedColumns]);
+      });
+    });
+  }, [dataMap, skuOrder, filter, selectedColumns]);
 
-  const updateValue = (rowIdx, col, newValue) => {
-    setData((prev) => {
-      const next = [...prev];
-      const globalIdx = prev.indexOf(filteredData[rowIdx]);
-      if (globalIdx < 0) return prev;
-      const row = { ...next[globalIdx] };
-      const attrs = { ...row.attributes };
-      attrs[col] = { value: newValue, confidence: "high" };
-      row.attributes = attrs;
-      next[globalIdx] = row;
+  // Pagination
+  const totalPages = Math.max(1, Math.ceil(filteredSkus.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages - 1);
+  const pageSkus = filteredSkus.slice(
+    safePage * PAGE_SIZE,
+    (safePage + 1) * PAGE_SIZE
+  );
+
+  // Reset page when filter changes
+  const setFilterAndReset = (f) => {
+    setFilter(f);
+    setPage(0);
+  };
+
+  // O(1) update via Map
+  const updateValue = useCallback((sku, col, newValue) => {
+    setDataMap((prev) => {
+      const next = new Map(prev);
+      const row = next.get(sku);
+      if (!row) return prev;
+      next.set(sku, {
+        ...row,
+        attributes: {
+          ...row.attributes,
+          [col]: { value: newValue, confidence: "high" },
+        },
+      });
       return next;
     });
+  }, []);
+
+  const handleDone = () => {
+    const ordered = skuOrder.map((sku) => dataMap.get(sku)).filter(Boolean);
+    onDone(ordered);
   };
 
   return (
@@ -92,7 +125,8 @@ export default function ReviewStep({
           <div>
             <h2 className="font-serif text-2xl text-gray-900">Review</h2>
             <p className="text-sm text-gray-500">
-              {data.length} producten &mdash; {selectedColumns.length} attributen
+              {filteredSkus.length} van {skuOrder.length} producten &mdash;{" "}
+              {selectedColumns.length} attributen
               {errors.length > 0 && (
                 <span className="text-red-500 ml-2">
                   ({errors.length} batch fouten)
@@ -124,7 +158,7 @@ export default function ReviewStep({
             ].map((f) => (
               <button
                 key={f.key}
-                onClick={() => setFilter(f.key)}
+                onClick={() => setFilterAndReset(f.key)}
                 className={`px-3 py-1.5 text-sm rounded-lg font-medium transition-all ${
                   filter === f.key
                     ? "bg-accent text-white"
@@ -174,60 +208,126 @@ export default function ReviewStep({
               </tr>
             </thead>
             <tbody>
-              {filteredData.map((row, rowIdx) => (
-                <tr
-                  key={row.sku || rowIdx}
-                  className="border-t border-gray-50 hover:bg-blue-50/20"
-                >
-                  <td className="px-4 py-2 font-mono text-xs text-gray-700 sticky left-0 bg-white z-10">
-                    {row.sku}
-                  </td>
-                  <td className="px-4 py-2 text-gray-700 sticky left-[100px] bg-white z-10 min-w-[350px] max-w-[500px] whitespace-normal break-words text-xs leading-snug">
-                    {row._product?.["erp_name-nl_NL"] ||
-                      row._product?.["variation_name-nl_NL"] ||
-                      "-"}
-                  </td>
-                  {filteredColumns.map((col) => {
-                    const attr = row.attributes?.[col] || {
-                      value: "",
-                      confidence: "empty",
-                    };
-                    return (
-                      <td key={col} className="px-4 py-2">
-                        <div className="flex items-center gap-2">
-                          <ConfidenceDot level={attr.confidence} />
-                          <input
-                            type="text"
-                            value={attr.value || ""}
-                            onChange={(e) =>
-                              updateValue(rowIdx, col, e.target.value)
-                            }
-                            className="w-full px-2 py-1 border border-gray-100 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-accent/30 focus:border-accent bg-transparent"
-                          />
-                        </div>
-                      </td>
-                    );
-                  })}
-                  <td className="px-4 py-2 text-xs text-gray-400 italic max-w-[200px] truncate">
-                    {row.opmerkingen || ""}
-                  </td>
-                </tr>
-              ))}
+              {pageSkus.map((sku) => {
+                const row = dataMap.get(sku);
+                if (!row) return null;
+                return (
+                  <tr
+                    key={sku}
+                    className="border-t border-gray-50 hover:bg-blue-50/20"
+                  >
+                    <td className="px-4 py-2 font-mono text-xs text-gray-700 sticky left-0 bg-white z-10">
+                      {row.sku}
+                    </td>
+                    <td className="px-4 py-2 text-gray-700 sticky left-[100px] bg-white z-10 min-w-[350px] max-w-[500px] whitespace-normal break-words text-xs leading-snug">
+                      {row._product?.["erp_name-nl_NL"] ||
+                        row._product?.["variation_name-nl_NL"] ||
+                        "-"}
+                    </td>
+                    {filteredColumns.map((col) => {
+                      const attr = row.attributes?.[col] || {
+                        value: "",
+                        confidence: "empty",
+                      };
+                      return (
+                        <td key={col} className="px-4 py-2">
+                          <div className="flex items-center gap-2">
+                            <ConfidenceDot level={attr.confidence} />
+                            <input
+                              type="text"
+                              value={attr.value || ""}
+                              onChange={(e) =>
+                                updateValue(sku, col, e.target.value)
+                              }
+                              className="w-full px-2 py-1 border border-gray-100 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-accent/30 focus:border-accent bg-transparent"
+                            />
+                          </div>
+                        </td>
+                      );
+                    })}
+                    <td className="px-4 py-2 text-xs text-gray-400 italic max-w-[200px]">
+                      {row.opmerkingen || ""}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
 
-        {filteredData.length === 0 && (
+        {filteredSkus.length === 0 && (
           <div className="py-12 text-center text-gray-400">
             Geen producten voor dit filter
           </div>
         )}
       </div>
 
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between bg-white rounded-2xl shadow-sm px-6 py-3">
+          <button
+            onClick={() => setPage((p) => Math.max(0, p - 1))}
+            disabled={safePage === 0}
+            className="px-3 py-1.5 text-sm font-medium bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            &larr; Vorige
+          </button>
+
+          <div className="flex items-center gap-1">
+            {Array.from({ length: totalPages }, (_, i) => {
+              // Show first, last, current, and neighbors
+              if (
+                i === 0 ||
+                i === totalPages - 1 ||
+                Math.abs(i - safePage) <= 1
+              ) {
+                return (
+                  <button
+                    key={i}
+                    onClick={() => setPage(i)}
+                    className={`w-8 h-8 text-sm rounded-lg font-medium transition-all ${
+                      i === safePage
+                        ? "bg-accent text-white"
+                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                    }`}
+                  >
+                    {i + 1}
+                  </button>
+                );
+              }
+              // Show dots for gaps
+              if (i === 1 && safePage > 2) {
+                return (
+                  <span key={i} className="px-1 text-gray-400">
+                    ...
+                  </span>
+                );
+              }
+              if (i === totalPages - 2 && safePage < totalPages - 3) {
+                return (
+                  <span key={i} className="px-1 text-gray-400">
+                    ...
+                  </span>
+                );
+              }
+              return null;
+            })}
+          </div>
+
+          <button
+            onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+            disabled={safePage >= totalPages - 1}
+            className="px-3 py-1.5 text-sm font-medium bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            Volgende &rarr;
+          </button>
+        </div>
+      )}
+
       {/* Actions */}
       <div className="flex justify-end">
         <button
-          onClick={() => onDone(data)}
+          onClick={handleDone}
           className="px-6 py-3 bg-accent hover:bg-accent-hover text-white font-semibold rounded-xl transition-colors shadow-sm"
         >
           Exporteren

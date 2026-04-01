@@ -1,9 +1,10 @@
 import { LABELS } from "../constants";
 
 const MODEL = "claude-sonnet-4-20250514";
-const MAX_CONCURRENT = 3;
+const MAX_CONCURRENT = 5;
 const MAX_RETRIES = 3;
-const MAX_CHARS_PER_BATCH = 12000; // rough char budget per batch
+const MAX_CHARS_PER_BATCH = 20000; // rough char budget per batch
+const CHARS_PER_TOKEN = 3.5; // avg chars per token for Dutch text
 
 // Sonnet 4 pricing (USD per 1M tokens)
 const PRICE_INPUT = 3;
@@ -13,6 +14,37 @@ export function calculateCost(usage) {
   const inputCost = (usage.inputTokens / 1_000_000) * PRICE_INPUT;
   const outputCost = (usage.outputTokens / 1_000_000) * PRICE_OUTPUT;
   return { inputCost, outputCost, totalCost: inputCost + outputCost };
+}
+
+export function estimateCost(products, selectedColumns, useDescription) {
+  const batches = createDynamicBatches(products, useDescription);
+
+  // Estimate prompt overhead (system prompt + rules + column list)
+  const columnListChars = selectedColumns.length * 25;
+  const promptOverhead = 800 + columnListChars; // system prompt + rules
+
+  let totalInputChars = 0;
+  for (const batch of batches) {
+    let batchChars = promptOverhead;
+    for (const p of batch) {
+      batchChars += estimateProductChars(p, useDescription);
+    }
+    totalInputChars += batchChars;
+  }
+
+  // Estimate output: ~150 chars per product per selected column
+  const totalOutputChars = products.length * selectedColumns.length * 30 + products.length * 50;
+
+  const inputTokens = Math.ceil(totalInputChars / CHARS_PER_TOKEN);
+  const outputTokens = Math.ceil(totalOutputChars / CHARS_PER_TOKEN);
+  const cost = calculateCost({ inputTokens, outputTokens });
+
+  return {
+    batches: batches.length,
+    inputTokens,
+    outputTokens,
+    ...cost,
+  };
 }
 
 function estimateProductChars(product, useDescription) {

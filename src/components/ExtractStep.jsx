@@ -79,6 +79,11 @@ export default function ExtractStep({ products, selectedColumns, apiKey, useDesc
           <span className="text-gray-400">({pct}%)</span>
         </p>
 
+        <p className="text-xs text-gray-400 mt-1">
+          {products.length} producten &middot; {selectedColumns.length} attributen
+          {progress.total > 0 && " \u00b7 5 parallel"}
+        </p>
+
         {progress.usage && progress.usage.inputTokens > 0 && (
           <div className="mt-4 flex items-center justify-center gap-4 text-xs text-gray-400">
             <span>{(progress.usage.inputTokens + progress.usage.outputTokens).toLocaleString()} tokens</span>
