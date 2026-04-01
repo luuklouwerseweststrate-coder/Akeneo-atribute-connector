@@ -19,6 +19,7 @@ export default function App() {
   const [step, setStep] = useState(1);
   const [fileData, setFileData] = useState(null);
   const [selectedColumns, setSelectedColumns] = useState([]);
+  const [useDescription, setUseDescription] = useState(false);
   const [apiKey, setApiKey] = useState(
     () => localStorage.getItem("akeneo_api_key") || ""
   );
@@ -31,8 +32,9 @@ export default function App() {
     setStep(2);
   }, []);
 
-  const handleColumnsSelected = useCallback((cols) => {
+  const handleColumnsSelected = useCallback((cols, withDescription) => {
     setSelectedColumns(cols);
+    setUseDescription(withDescription);
     setStep(3);
   }, []);
 
@@ -128,6 +130,7 @@ export default function App() {
               products={fileData.products}
               selectedColumns={selectedColumns}
               apiKey={apiKey}
+              useDescription={useDescription}
               onDone={handleExtractionDone}
             />
           )}
@@ -152,6 +155,7 @@ export default function App() {
                 setErrors([]);
                 setSelectedColumns([]);
                 setUsage(null);
+                setUseDescription(false);
               }}
             />
           )}

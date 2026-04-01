@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { extractAttributes, calculateCost } from "../utils/claudeApi";
 
-export default function ExtractStep({ products, selectedColumns, apiKey, onDone }) {
+export default function ExtractStep({ products, selectedColumns, apiKey, useDescription, onDone }) {
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [status, setStatus] = useState("running");
   const started = useRef(false);
@@ -16,7 +16,8 @@ export default function ExtractStep({ products, selectedColumns, apiKey, onDone 
           products,
           selectedColumns,
           apiKey,
-          setProgress
+          setProgress,
+          useDescription
         );
         setStatus("done");
         onDone(result);
@@ -25,7 +26,7 @@ export default function ExtractStep({ products, selectedColumns, apiKey, onDone 
       }
     };
     run();
-  }, [products, selectedColumns, apiKey, onDone]);
+  }, [products, selectedColumns, apiKey, useDescription, onDone]);
 
   const pct =
     progress.total > 0
@@ -57,7 +58,12 @@ export default function ExtractStep({ products, selectedColumns, apiKey, onDone 
           Attributen extraheren
         </h2>
         <p className="text-gray-500 text-sm mb-6">
-          Claude analyseert je producttitels...
+          Claude analyseert je product{useDescription ? "informatie" : "titels"}...
+          {useDescription && (
+            <span className="block text-xs text-accent mt-1">
+              Incl. omschrijvingen
+            </span>
+          )}
         </p>
 
         {/* Progress bar */}

@@ -11,6 +11,12 @@ export default function AnalyzeStep({ fileData, onColumnsSelected, onBack }) {
   );
 
   const [selected, setSelected] = useState(new Set(preSelected));
+  const [useDescription, setUseDescription] = useState(true);
+
+  const hasDescriptions = useMemo(
+    () => products.some((p) => (p["description-nl_NL"] || "").trim().length > 0),
+    [products]
+  );
 
   const preview = products.slice(0, 5);
 
@@ -83,6 +89,35 @@ export default function AnalyzeStep({ fileData, onColumnsSelected, onBack }) {
         </div>
       </div>
 
+      {/* Description toggle */}
+      {hasDescriptions && (
+        <div className="bg-white rounded-2xl shadow-sm p-6">
+          <label className="flex items-center gap-3 cursor-pointer">
+            <div
+              className={`relative w-11 h-6 rounded-full transition-colors ${
+                useDescription ? "bg-accent" : "bg-gray-200"
+              }`}
+              onClick={() => setUseDescription((v) => !v)}
+            >
+              <div
+                className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+                  useDescription ? "translate-x-5" : ""
+                }`}
+              />
+            </div>
+            <div>
+              <span className="font-medium text-gray-900">
+                Omschrijvingen meesturen
+              </span>
+              <p className="text-sm text-gray-500">
+                Gebruik ook de productomschrijving als bron voor extractie.
+                Vindt meer attributen, maar kost meer tokens.
+              </p>
+            </div>
+          </label>
+        </div>
+      )}
+
       {/* Column selection */}
       <div className="bg-white rounded-2xl shadow-sm p-6">
         <div className="flex items-center justify-between mb-4">
@@ -136,7 +171,7 @@ export default function AnalyzeStep({ fileData, onColumnsSelected, onBack }) {
       {/* Continue */}
       <div className="flex justify-end">
         <button
-          onClick={() => onColumnsSelected([...selected])}
+          onClick={() => onColumnsSelected([...selected], useDescription && hasDescriptions)}
           disabled={selected.size === 0}
           className="px-6 py-3 bg-accent hover:bg-accent-hover text-white font-semibold rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
         >
