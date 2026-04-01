@@ -111,6 +111,8 @@ function buildPrompt(products, selectedColumns, useDescription) {
     ? "- Gebruik ALLE bronnen: titels (ERP + commercieel) EN de omschrijving"
     : "- Gebruik BEIDE titels (ERP + commercieel) als bron";
 
+  const skuList = products.map((p) => p.sku || "").join(", ");
+
   return `Je bent een specialist in B2B productdata voor een Nederlandse groothandel (verpakkingen, schoonmaak, kantoor, PBM, medisch, horeca, facilitair).
 
 Extraheer attributen uit de productinformatie naar deze Akeneo-kolommen: ${columnList}
@@ -118,19 +120,32 @@ Extraheer attributen uit de productinformatie naar deze Akeneo-kolommen: ${colum
 PRODUCTEN:
 ${productLines}
 
+BELANGRIJK:
+- Je MOET voor ELKE product een resultaat teruggeven. Verwachte SKUs: ${skuList}
+- Analyseer ELKE titel grondig: kijk naar kleuren, maten, afmetingen, materialen, aantallen
+- Voorbeelden van patronen die je MOET herkennen:
+  - "18cm" → lengte_26: "18" (cm kolom)
+  - "180mm" → lengte: "180" (mm kolom)
+  - "blauw" of "blue" → kleur-nl_NL: "blauw", kleur-en_US: "blue"
+  - "rood" of "red" → kleur-nl_NL: "rood", kleur-en_US: "red"
+  - "40x48cm" → lengte_26: "40", breedte_27: "48"
+  - "100st" of "(100)" → verpakt_per: "100"
+  - "2-laags" → aantal_lagen: "2"
+  - Modelnummers tussen haakjes: "(EC873523)" → mpn: "EC873523"
+
 REGELS:
 ${descRule}
 - ALLEEN extraheren wat letterlijk of sterk afleidbaar is
-- confidence: "high" (letterlijk), "medium" (afleidbaar), "low" (twijfel)
+- confidence: "high" (letterlijk in tekst), "medium" (afleidbaar), "low" (twijfel)
 - Niet te bepalen: value "" en confidence "empty"
-- Kleuren Nederlands (White→wit, Black→zwart, Blue→blauw)
-- Afmetingen in juiste eenheid per kolom (mm/cm/m/liter)
-- Getallen zonder eenheid voor number-kolommen
-- Patronen: "40x48cm", "100st", "2-laags", "T25"
-- Bij kleur-nl_NL / kleur-en_US: Nederlandse resp. Engelse kleur
-- Vermeld in "opmerkingen" als iets onduidelijk is of uit de omschrijving komt
+- Kleuren altijd in het Nederlands voor kleur-nl_NL (White→wit, Black→zwart, Blue→blauw, Red→rood, Green→groen, Yellow→geel, Grey→grijs, Orange→oranje, Pink→roze, Brown→bruin, Purple→paars)
+- Kleuren altijd in het Engels voor kleur-en_US
+- Afmetingen: zet het GETAL in de juiste kolom op basis van de eenheid (mm→lengte, cm→lengte_26, m→lengte_25)
+- Getallen ZONDER eenheid-suffix voor number-kolommen (dus "18" niet "18cm")
+- Vermeld in "opmerkingen" als iets onduidelijk is
 
-Antwoord ALLEEN met valid JSON, geen markdown, geen backticks:
+Antwoord ALLEEN met valid JSON, geen markdown, geen backticks.
+Er moeten PRECIES ${products.length} items in de array staan, één per product:
 [{"sku":"...","attributes":{"kolom_id":{"value":"...","confidence":"high|medium|low|empty"}},"opmerkingen":"optioneel"}]`;
 }
 
@@ -209,7 +224,24 @@ async function processBatch(batch, selectedColumns, apiKey, useDescription) {
   const cleaned = text.replace(/```json?\s*/g, "").replace(/```\s*/g, "").trim();
   const parsed = JSON.parse(cleaned);
 
-  return { results: parsed, usage: batchUsage };
+  // Validate: ensure every SKU in the batch has a result
+  const resultMap = new Map();
+  for (const r of parsed) {
+    if (r.sku) resultMap.set(String(r.sku), r);
+  }
+
+  const validated = batch.map((p) => {
+    const sku = String(p.sku || "");
+    if (resultMap.has(sku)) return resultMap.get(sku);
+    // SKU was missing from response — return empty placeholder
+    return {
+      sku,
+      attributes: {},
+      opmerkingen: "Niet geretourneerd door model — mogelijk opnieuw proberen",
+    };
+  });
+
+  return { results: validated, usage: batchUsage };
 }
 
 export async function extractAttributes(
