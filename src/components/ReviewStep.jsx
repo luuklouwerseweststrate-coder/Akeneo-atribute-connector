@@ -1,6 +1,7 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef } from "react";
 import { LABELS } from "../constants";
 import { calculateCost } from "../utils/claudeApi";
+import { saveFeedback, getFeedbackStats } from "../utils/feedbackStore";
 
 const CONF_COLORS = {
   high: "text-conf-high",
@@ -47,6 +48,20 @@ export default function ReviewStep({
 
   // Keep ordered SKU list for stable rendering
   const skuOrder = useMemo(() => results.map((r) => r.sku), [results]);
+
+  // Bijhouden welke waarden de gebruiker heeft aangepast (origineel → nieuw)
+  const originalValues = useRef(new Map());
+  // Bij eerste render: sla originele waarden op
+  useMemo(() => {
+    const map = new Map();
+    for (const r of results) {
+      for (const col of selectedColumns) {
+        const val = r.attributes?.[col]?.value || "";
+        map.set(`${r.sku}::${col}`, val);
+      }
+    }
+    originalValues.current = map;
+  }, [results, selectedColumns]);
 
   const [filter, setFilter] = useState("all");
   const [colSearch, setColSearch] = useState("");
@@ -114,6 +129,31 @@ export default function ReviewStep({
 
   const handleDone = () => {
     const ordered = skuOrder.map((sku) => dataMap.get(sku)).filter(Boolean);
+
+    // Verzamel alle correcties (waarden die de gebruiker heeft aangepast)
+    const corrections = [];
+    for (const row of ordered) {
+      const sku = row.sku;
+      const title = row._product?.["erp_name-nl_NL"] || row._product?.["variation_name-nl_NL"] || sku;
+      for (const col of selectedColumns) {
+        const originalVal = originalValues.current.get(`${sku}::${col}`) || "";
+        const currentVal = row.attributes?.[col]?.value || "";
+        if (currentVal !== originalVal) {
+          corrections.push({
+            productTitle: title,
+            column: col,
+            wrongValue: originalVal,
+            correctValue: currentVal,
+          });
+        }
+      }
+    }
+
+    // Sla correcties op als feedback
+    if (corrections.length > 0) {
+      saveFeedback(corrections);
+    }
+
     onDone(ordered);
   };
 
@@ -147,6 +187,15 @@ export default function ReviewStep({
                     ${cost.totalCost.toFixed(4)}
                   </span>
                 </div>
+              );
+            })()}
+            {(() => {
+              const stats = getFeedbackStats();
+              if (stats.total === 0) return null;
+              return (
+                <p className="mt-1 text-xs text-gray-400">
+                  {stats.total} eerdere correcties opgeslagen &mdash; Claude leert hiervan
+                </p>
               );
             })()}
           </div>

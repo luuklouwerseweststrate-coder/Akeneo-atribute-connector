@@ -1,4 +1,5 @@
 import { LABELS } from "../constants";
+import { findRelevantFeedback, formatFeedbackForPrompt } from "./feedbackStore";
 
 const MODEL = "claude-sonnet-4-20250514";
 const MAX_CONCURRENT = 5;
@@ -90,6 +91,10 @@ function truncate(text, maxLen) {
 }
 
 function buildPrompt(products, selectedColumns, useDescription) {
+  // Zoek relevante feedback voor deze batch
+  const feedback = findRelevantFeedback(products, selectedColumns);
+  const feedbackText = formatFeedbackForPrompt(feedback);
+
   const columnList = selectedColumns
     .map((col) => `${col} (${LABELS[col] || col})`)
     .join(", ");
@@ -146,7 +151,7 @@ ${descRule}
 
 Antwoord ALLEEN met valid JSON, geen markdown, geen backticks.
 Er moeten PRECIES ${products.length} items in de array staan, één per product:
-[{"sku":"...","attributes":{"kolom_id":{"value":"...","confidence":"high|medium|low|empty"}},"opmerkingen":"optioneel"}]`;
+[{"sku":"...","attributes":{"kolom_id":{"value":"...","confidence":"high|medium|low|empty"}},"opmerkingen":"optioneel"}]${feedbackText}`;
 }
 
 async function fetchWithRetry(url, options, retries = MAX_RETRIES) {
