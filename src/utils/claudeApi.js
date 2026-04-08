@@ -18,11 +18,12 @@ export function calculateCost(usage) {
 }
 
 export function estimateCost(products, selectedColumns, useDescription) {
-  const batches = createDynamicBatches(products, useDescription);
+  const batches = createDynamicBatches(products, useDescription, selectedColumns);
 
-  // Estimate prompt overhead (system prompt + rules + column list)
+  // Realistischere prompt overhead (system prompt + regels + patronen + kolommen + feedback)
   const columnListChars = selectedColumns.length * 25;
-  const promptOverhead = 800 + columnListChars; // system prompt + rules
+  const feedbackChars = 500; // gemiddelde feedback-bijdrage per batch
+  const promptOverhead = 1500 + columnListChars + feedbackChars;
 
   let totalInputChars = 0;
   for (const batch of batches) {
@@ -33,11 +34,12 @@ export function estimateCost(products, selectedColumns, useDescription) {
     totalInputChars += batchChars;
   }
 
-  // Estimate output: ~150 chars per product per selected column
-  const totalOutputChars = products.length * selectedColumns.length * 30 + products.length * 50;
+  // Output schatting: ~60 chars per product per kolom (JSON overhead)
+  const totalOutputChars = products.length * selectedColumns.length * 60 + products.length * 80;
 
-  const inputTokens = Math.ceil(totalInputChars / CHARS_PER_TOKEN);
-  const outputTokens = Math.ceil(totalOutputChars / CHARS_PER_TOKEN);
+  // 1.2x veiligheidsmarge voor conservatieve schatting
+  const inputTokens = Math.ceil((totalInputChars / CHARS_PER_TOKEN) * 1.2);
+  const outputTokens = Math.ceil((totalOutputChars / CHARS_PER_TOKEN) * 1.2);
   const cost = calculateCost({ inputTokens, outputTokens });
 
   return {
@@ -60,7 +62,11 @@ function estimateProductChars(product, useDescription) {
   return chars + 80; // overhead for labels
 }
 
-function createDynamicBatches(products, useDescription) {
+function createDynamicBatches(products, useDescription, selectedColumns = []) {
+  // Begrens batch-grootte ook op verwachte output (~60 chars per product per kolom)
+  const colCount = Math.max(selectedColumns.length, 1);
+  const maxByOutput = Math.max(5, Math.floor(14000 / (colCount * 60)));
+
   const batches = [];
   let currentBatch = [];
   let currentChars = 0;
@@ -68,7 +74,7 @@ function createDynamicBatches(products, useDescription) {
   for (const product of products) {
     const chars = estimateProductChars(product, useDescription);
 
-    if (currentBatch.length > 0 && currentChars + chars > MAX_CHARS_PER_BATCH) {
+    if (currentBatch.length > 0 && (currentChars + chars > MAX_CHARS_PER_BATCH || currentBatch.length >= maxByOutput)) {
       batches.push(currentBatch);
       currentBatch = [];
       currentChars = 0;
@@ -156,17 +162,40 @@ Er moeten PRECIES ${products.length} items in de array staan, één per product:
 
 async function fetchWithRetry(url, options, retries = MAX_RETRIES) {
   for (let attempt = 0; attempt <= retries; attempt++) {
-    const response = await fetch(url, options);
+    // 60 seconden timeout per poging
+    const timeoutController = new AbortController();
+    const timeout = setTimeout(() => timeoutController.abort(), 60000);
 
-    if (response.status === 429 || response.status === 529 || (response.status >= 500 && response.status < 600)) {
-      if (attempt < retries) {
-        const delay = Math.pow(2, attempt + 1) * 1000; // 2s, 4s, 8s
+    // Combineer timeout-signal met eventueel extern signal (annuleerknop)
+    const mergedSignal = options.signal
+      ? AbortSignal.any([options.signal, timeoutController.signal])
+      : timeoutController.signal;
+
+    try {
+      const response = await fetch(url, { ...options, signal: mergedSignal });
+      clearTimeout(timeout);
+
+      if (response.status === 429 || response.status === 529 || (response.status >= 500 && response.status < 600)) {
+        if (attempt < retries) {
+          const delay = Math.pow(2, attempt + 1) * 1000;
+          await new Promise((r) => setTimeout(r, delay));
+          continue;
+        }
+      }
+
+      return response;
+    } catch (err) {
+      clearTimeout(timeout);
+      // Als het een extern abort-signaal is (annuleerknop), meteen doorgooin
+      if (options.signal?.aborted) throw err;
+      // Als het een timeout is, behandel als retry-bare fout
+      if (timeoutController.signal.aborted && attempt < retries) {
+        const delay = Math.pow(2, attempt + 1) * 1000;
         await new Promise((r) => setTimeout(r, delay));
         continue;
       }
+      throw err;
     }
-
-    return response;
   }
 }
 
@@ -197,8 +226,42 @@ export async function validateApiKey(apiKey) {
   }
 }
 
-async function processBatch(batch, selectedColumns, apiKey, useDescription) {
+// Bereken dynamische max_tokens op basis van batch-grootte en kolommen
+function calcMaxTokens(batchSize, columnCount) {
+  // ~60 chars JSON output per product per kolom, 3.5 chars per token
+  const estimatedOutputTokens = Math.ceil((batchSize * columnCount * 60) / CHARS_PER_TOKEN);
+  return Math.min(8192, Math.max(4096, Math.ceil(estimatedOutputTokens * 1.5)));
+}
+
+// Robuuste JSON-parser: probeert meerdere strategieen
+function safeParseJSON(text) {
+  const cleaned = text.replace(/```json?\s*/g, "").replace(/```\s*/g, "").trim();
+
+  // Poging 1: directe parse
+  try {
+    const result = JSON.parse(cleaned);
+    // Claude wrapt soms in een object
+    if (result && !Array.isArray(result) && Array.isArray(result.results)) return result.results;
+    if (Array.isArray(result)) return result;
+  } catch { /* probeer verdere opschoning */ }
+
+  // Poging 2: strip alles voor eerste [ en na laatste ]
+  try {
+    const start = cleaned.indexOf("[");
+    const end = cleaned.lastIndexOf("]");
+    if (start >= 0 && end > start) {
+      const sliced = cleaned.slice(start, end + 1);
+      const result = JSON.parse(sliced);
+      if (Array.isArray(result)) return result;
+    }
+  } catch { /* geef op */ }
+
+  return null;
+}
+
+async function processBatch(batch, selectedColumns, apiKey, useDescription, signal) {
   const prompt = buildPrompt(batch, selectedColumns, useDescription);
+  const maxTokens = calcMaxTokens(batch.length, selectedColumns.length);
   const response = await fetchWithRetry("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -207,9 +270,10 @@ async function processBatch(batch, selectedColumns, apiKey, useDescription) {
       "anthropic-version": "2023-06-01",
       "anthropic-dangerous-direct-browser-access": "true",
     },
+    signal,
     body: JSON.stringify({
       model: MODEL,
-      max_tokens: 4096,
+      max_tokens: maxTokens,
       messages: [{ role: "user", content: prompt }],
     }),
   });
@@ -226,19 +290,27 @@ async function processBatch(batch, selectedColumns, apiKey, useDescription) {
   };
 
   const text = data.content?.[0]?.text || "[]";
-  const cleaned = text.replace(/```json?\s*/g, "").replace(/```\s*/g, "").trim();
-  const parsed = JSON.parse(cleaned);
+  const parsed = safeParseJSON(text);
+
+  // Als JSON helemaal niet geparsed kan worden: fallback per SKU
+  if (!parsed) {
+    const fallback = batch.map((p) => ({
+      sku: String(p.sku || ""),
+      attributes: {},
+      opmerkingen: "JSON-parse fout — handmatig invullen",
+    }));
+    return { results: fallback, usage: batchUsage };
+  }
 
   // Validate: ensure every SKU in the batch has a result
   const resultMap = new Map();
   for (const r of parsed) {
-    if (r.sku) resultMap.set(String(r.sku), r);
+    if (r && r.sku) resultMap.set(String(r.sku), r);
   }
 
   const validated = batch.map((p) => {
     const sku = String(p.sku || "");
     if (resultMap.has(sku)) return resultMap.get(sku);
-    // SKU was missing from response — return empty placeholder
     return {
       sku,
       attributes: {},
@@ -254,9 +326,10 @@ export async function extractAttributes(
   selectedColumns,
   apiKey,
   onProgress,
-  useDescription = false
+  useDescription = false,
+  signal = null
 ) {
-  const batches = createDynamicBatches(products, useDescription);
+  const batches = createDynamicBatches(products, useDescription, selectedColumns);
 
   const allResults = [];
   const errors = [];
@@ -273,7 +346,7 @@ export async function extractAttributes(
     const { batch, index } = queue.shift();
     const promise = (async () => {
       try {
-        const result = await processBatch(batch, selectedColumns, apiKey, useDescription);
+        const result = await processBatch(batch, selectedColumns, apiKey, useDescription, signal);
         usage.inputTokens += result.usage.inputTokens;
         usage.outputTokens += result.usage.outputTokens;
         return { index, results: result.results, error: null };
@@ -311,10 +384,23 @@ export async function extractAttributes(
     const finished = await Promise.race([...active]);
     resultsByIndex[finished.index] = finished.results;
 
+    // Checkpoint: sla tussenresultaten op in sessionStorage
+    try {
+      sessionStorage.setItem("akeneo_checkpoint", JSON.stringify({
+        resultsByIndex,
+        usage: { ...usage },
+        completedBatches: completed,
+        totalBatches: batches.length,
+      }));
+    } catch { /* sessionStorage vol of niet beschikbaar */ }
+
     if (queue.length > 0) {
       processNext();
     }
   }
+
+  // Checkpoint opruimen na succesvolle afronding
+  try { sessionStorage.removeItem("akeneo_checkpoint"); } catch {}
 
   // Assemble results in original order
   for (let i = 0; i < batches.length; i++) {

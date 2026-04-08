@@ -58,3 +58,10 @@ body {
   border-radius: 50%;
   background-color: currentColor;
 }
+
+/* Print stylesheet voor het rapport */
+@media print {
+  body { background: white; }
+  header, nav, .print\\:hidden { display: none !important; }
+  main { padding: 0; max-width: 100%; }
+}

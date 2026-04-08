@@ -44,13 +44,50 @@ export default function UploadStep({ onFileLoaded }) {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh]">
-      <div className="text-center mb-8">
-        <h2 className="font-serif text-3xl text-gray-900 mb-2">
-          Product bestand uploaden
+      {/* Hero sectie */}
+      <div className="text-center mb-10 max-w-2xl">
+        <h2 className="font-serif text-4xl text-gray-900 mb-3">
+          Productattributen automatisch invullen
         </h2>
-        <p className="text-gray-500">
-          Upload een Akeneo product-export om te beginnen
+        <p className="text-gray-500 text-lg mb-8">
+          Upload een Akeneo export en laat AI de lege kolommen vullen.
+          Kleur, maat, afmetingen, materiaal — in minuten in plaats van dagen.
         </p>
+
+        {/* 3 stappen visueel */}
+        <div className="flex items-center justify-center gap-3 mb-10">
+          {[
+            { icon: (
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+              </svg>
+            ), label: "Upload Excel" },
+            { icon: (
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+              </svg>
+            ), label: "AI extraheert" },
+            { icon: (
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              </svg>
+            ), label: "Download CSV" },
+          ].map((step, i) => (
+            <div key={i} className="flex items-center gap-3">
+              <div className="flex flex-col items-center gap-1.5">
+                <div className="w-10 h-10 rounded-full bg-accent/10 flex items-center justify-center text-accent">
+                  {step.icon}
+                </div>
+                <span className="text-xs font-medium text-gray-600">{step.label}</span>
+              </div>
+              {i < 2 && (
+                <svg className="w-5 h-5 text-gray-300 mb-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                </svg>
+              )}
+            </div>
+          ))}
+        </div>
       </div>
 
       <div

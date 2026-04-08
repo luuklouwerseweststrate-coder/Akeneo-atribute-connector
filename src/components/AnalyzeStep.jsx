@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { analyzeColumns } from "../utils/columnAnalyzer";
 import { estimateCost } from "../utils/claudeApi";
 import { LABELS } from "../constants";
+import { getPresets, savePreset, deletePreset } from "../utils/presetStore";
 
 export default function AnalyzeStep({ fileData, onColumnsSelected, onBack }) {
   const { products, columns, fileName } = fileData;
@@ -13,6 +14,8 @@ export default function AnalyzeStep({ fileData, onColumnsSelected, onBack }) {
 
   const [selected, setSelected] = useState(new Set(preSelected));
   const [useDescription, setUseDescription] = useState(true);
+  const [presets, setPresets] = useState(() => getPresets());
+  const [presetName, setPresetName] = useState("");
 
   const hasDescriptions = useMemo(
     () => products.some((p) => (p["description-nl_NL"] || "").trim().length > 0),
@@ -144,6 +147,59 @@ export default function AnalyzeStep({ fileData, onColumnsSelected, onBack }) {
               Niets
             </button>
           </div>
+        </div>
+
+        {/* Presets */}
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <span className="text-xs text-gray-400 font-medium">Presets:</span>
+          {presets.map((p) => (
+            <button
+              key={p.name}
+              onClick={() => {
+                const filtered = p.columns.filter((c) => emptyColumns.includes(c));
+                setSelected(new Set(filtered));
+              }}
+              className="px-3 py-1 text-xs font-medium bg-purple/10 text-purple hover:bg-purple/20 rounded-full transition-colors"
+            >
+              {p.name}
+              {!p.builtIn && (
+                <span
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deletePreset(p.name);
+                    setPresets(getPresets());
+                  }}
+                  className="ml-1.5 text-purple/40 hover:text-red-500 cursor-pointer"
+                >
+                  x
+                </span>
+              )}
+            </button>
+          ))}
+          {selected.size > 0 && (
+            <div className="flex items-center gap-1 ml-2">
+              <input
+                type="text"
+                value={presetName}
+                onChange={(e) => setPresetName(e.target.value)}
+                placeholder="Naam..."
+                className="w-24 px-2 py-1 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-purple/30"
+              />
+              <button
+                onClick={() => {
+                  if (presetName.trim()) {
+                    savePreset(presetName.trim(), [...selected]);
+                    setPresets(getPresets());
+                    setPresetName("");
+                  }
+                }}
+                disabled={!presetName.trim()}
+                className="px-2 py-1 text-xs font-medium bg-purple text-white rounded-lg hover:bg-purple/80 disabled:opacity-40 transition-colors"
+              >
+                Opslaan
+              </button>
+            </div>
+          )}
         </div>
 
         {emptyColumns.length === 0 ? (

@@ -26,6 +26,7 @@ export default function App() {
   const [results, setResults] = useState([]);
   const [errors, setErrors] = useState([]);
   const [usage, setUsage] = useState(null);
+  const [extractionStartTime, setExtractionStartTime] = useState(null);
 
   const handleFileLoaded = useCallback((data) => {
     setFileData(data);
@@ -41,6 +42,7 @@ export default function App() {
   const handleApiKeySet = useCallback((key) => {
     setApiKey(key);
     localStorage.setItem("akeneo_api_key", key);
+    setExtractionStartTime(Date.now());
     setStep(4);
   }, []);
 
@@ -132,6 +134,7 @@ export default function App() {
               apiKey={apiKey}
               useDescription={useDescription}
               onDone={handleExtractionDone}
+              onCancel={() => setStep(3)}
             />
           )}
           {step === 5 && (
@@ -148,6 +151,8 @@ export default function App() {
             <ExportStep
               results={results}
               selectedColumns={selectedColumns}
+              usage={usage}
+              extractionStartTime={extractionStartTime}
               onRestart={() => {
                 setStep(1);
                 setFileData(null);
@@ -156,6 +161,7 @@ export default function App() {
                 setSelectedColumns([]);
                 setUsage(null);
                 setUseDescription(false);
+                setExtractionStartTime(null);
               }}
             />
           )}

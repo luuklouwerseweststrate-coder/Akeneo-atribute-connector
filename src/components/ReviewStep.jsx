@@ -63,8 +63,27 @@ export default function ReviewStep({
     originalValues.current = map;
   }, [results, selectedColumns]);
 
+  // Kwaliteitsstatistieken berekenen
+  const stats = useMemo(() => {
+    let high = 0, medium = 0, low = 0, empty = 0;
+    for (const [, row] of dataMap) {
+      for (const col of selectedColumns) {
+        const conf = row.attributes?.[col]?.confidence || "empty";
+        if (conf === "high") high++;
+        else if (conf === "medium") medium++;
+        else if (conf === "low") low++;
+        else empty++;
+      }
+    }
+    const total = high + medium + low + empty;
+    const filled = high + medium + low;
+    const fillRate = total > 0 ? Math.round((filled / total) * 100) : 0;
+    return { high, medium, low, empty, total, filled, fillRate };
+  }, [dataMap, selectedColumns]);
+
   const [filter, setFilter] = useState("all");
   const [colSearch, setColSearch] = useState("");
+  const [skuSearch, setSkuSearch] = useState("");
   const [page, setPage] = useState(0);
 
   const filteredColumns = useMemo(() => {
@@ -78,8 +97,22 @@ export default function ReviewStep({
   }, [selectedColumns, colSearch]);
 
   const filteredSkus = useMemo(() => {
-    if (filter === "all") return skuOrder;
-    return skuOrder.filter((sku) => {
+    let list = skuOrder;
+
+    // Eerst filteren op zoekterm (SKU of productnaam)
+    if (skuSearch.trim()) {
+      const q = skuSearch.toLowerCase();
+      list = list.filter((sku) => {
+        const r = dataMap.get(sku);
+        if (!r) return false;
+        const title = (r._product?.["erp_name-nl_NL"] || "") + " " + (r._product?.["variation_name-nl_NL"] || "");
+        return sku.toLowerCase().includes(q) || title.toLowerCase().includes(q);
+      });
+    }
+
+    // Dan filteren op confidence
+    if (filter === "all") return list;
+    return list.filter((sku) => {
       const r = dataMap.get(sku);
       if (!r) return false;
       if (filter === "issues") {
@@ -88,13 +121,18 @@ export default function ReviewStep({
           return conf === "low" || conf === "empty";
         });
       }
+      if (filter === "high" || filter === "medium" || filter === "low" || filter === "empty") {
+        return selectedColumns.some((col) => {
+          return (r.attributes?.[col]?.confidence || "empty") === filter;
+        });
+      }
       // clean
       return selectedColumns.every((col) => {
         const conf = r.attributes?.[col]?.confidence;
         return conf === "high" || conf === "medium";
       });
     });
-  }, [dataMap, skuOrder, filter, selectedColumns]);
+  }, [dataMap, skuOrder, filter, selectedColumns, skuSearch]);
 
   // Pagination
   const totalPages = Math.max(1, Math.ceil(filteredSkus.length / PAGE_SIZE));
@@ -220,14 +258,46 @@ export default function ReviewStep({
           </div>
         </div>
 
-        <div className="mt-3">
+        <div className="mt-3 flex gap-3">
+          <input
+            type="text"
+            value={skuSearch}
+            onChange={(e) => { setSkuSearch(e.target.value); setPage(0); }}
+            placeholder="Zoek product (SKU of naam)..."
+            className="w-full sm:w-72 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent"
+          />
           <input
             type="text"
             value={colSearch}
             onChange={(e) => setColSearch(e.target.value)}
             placeholder="Zoek kolom..."
-            className="w-full sm:w-64 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent"
+            className="w-full sm:w-48 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent"
           />
+        </div>
+      </div>
+
+      {/* Kwaliteitsdashboard */}
+      <div className="grid grid-cols-5 gap-3">
+        {[
+          { key: "high", label: "Zeker", count: stats.high, color: "bg-green-50 text-conf-high border-green-200" },
+          { key: "medium", label: "Waarschijnlijk", count: stats.medium, color: "bg-amber-50 text-conf-medium border-amber-200" },
+          { key: "low", label: "Twijfel", count: stats.low, color: "bg-red-50 text-conf-low border-red-200" },
+          { key: "empty", label: "Leeg", count: stats.empty, color: "bg-gray-50 text-conf-empty border-gray-200" },
+        ].map((s) => (
+          <button
+            key={s.key}
+            onClick={() => setFilterAndReset(s.key === filter ? "all" : s.key)}
+            className={`rounded-xl border p-3 text-center transition-all hover:scale-[1.02] ${s.color} ${
+              filter === s.key ? "ring-2 ring-offset-1 ring-current" : ""
+            }`}
+          >
+            <div className="text-2xl font-bold">{s.count.toLocaleString()}</div>
+            <div className="text-xs font-medium opacity-80">{s.label}</div>
+          </button>
+        ))}
+        <div className="rounded-xl border border-accent/20 bg-accent/5 p-3 text-center">
+          <div className="text-2xl font-bold text-accent">{stats.fillRate}%</div>
+          <div className="text-xs font-medium text-accent/70">Ingevuld</div>
         </div>
       </div>
 
@@ -278,6 +348,8 @@ export default function ReviewStep({
                         value: "",
                         confidence: "empty",
                       };
+                      const originalVal = originalValues.current.get(`${sku}::${col}`) || "";
+                      const isEdited = (attr.value || "") !== originalVal;
                       return (
                         <td key={col} className="px-4 py-2">
                           <div className="flex items-center gap-2">
@@ -288,7 +360,11 @@ export default function ReviewStep({
                               onChange={(e) =>
                                 updateValue(sku, col, e.target.value)
                               }
-                              className="w-full px-2 py-1 border border-gray-100 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-accent/30 focus:border-accent bg-transparent"
+                              className={`w-full px-2 py-1 border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-accent/30 focus:border-accent bg-transparent ${
+                                isEdited
+                                  ? "border-amber-400 bg-amber-50/40 ring-1 ring-amber-200"
+                                  : "border-gray-100"
+                              }`}
                             />
                           </div>
                         </td>
