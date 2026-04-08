@@ -1,3 +1,5 @@
+import * as XLSX from "xlsx";
+
 export function exportCSV(results, selectedColumns) {
   const header = ["sku", ...selectedColumns];
   const rows = results.map((r) => {
@@ -9,33 +11,29 @@ export function exportCSV(results, selectedColumns) {
     return row;
   });
 
-  const escape = (val) => {
-    const str = String(val);
-    if (str.includes(";") || str.includes('"') || str.includes("\n")) {
-      return `"${str.replace(/"/g, '""')}"`;
+  // Bouw worksheet
+  const wsData = [header, ...rows];
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+  // Kolombreedte automatisch aanpassen
+  ws["!cols"] = header.map((h, i) => {
+    let maxLen = h.length;
+    for (const row of rows) {
+      const val = String(row[i] || "");
+      if (val.length > maxLen) maxLen = val.length;
     }
-    return str;
-  };
+    return { wch: Math.min(maxLen + 2, 40) };
+  });
 
-  const csv =
-    [header.map(escape).join(";"), ...rows.map((r) => r.map(escape).join(";"))].join(
-      "\r\n"
-    );
-
-  const BOM = "\uFEFF";
-  const blob = new Blob([BOM + csv], { type: "text/csv;charset=utf-8" });
+  // Maak workbook
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Akeneo Import");
 
   const date = new Date().toISOString().slice(0, 10);
-  const fileName = `akeneo_import_${date}.csv`;
+  const fileName = `akeneo_import_${date}.xlsx`;
 
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = fileName;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  // Download
+  XLSX.writeFile(wb, fileName);
 
   return fileName;
 }

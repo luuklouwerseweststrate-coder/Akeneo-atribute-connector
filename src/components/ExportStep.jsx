@@ -131,7 +131,7 @@ export default function ExportStep({ results, selectedColumns, usage, extraction
       <div className="bg-white rounded-2xl shadow-sm p-6 text-center">
         {downloaded && (
           <p className="text-sm text-gray-500 mb-4">
-            {fileName} is opgeslagen. Importeer dit bestand in Akeneo via "Productimport" met optie "vergelijken en samenvoegen".
+            {fileName} is gedownload. Importeer dit bestand in Akeneo via "Productimport" met optie "vergelijken en samenvoegen".
           </p>
         )}
 
@@ -140,7 +140,7 @@ export default function ExportStep({ results, selectedColumns, usage, extraction
             onClick={handleDownload}
             className="w-full px-6 py-3 bg-accent hover:bg-accent-hover text-white font-semibold rounded-xl transition-colors shadow-sm"
           >
-            {downloaded ? "Opnieuw downloaden" : "Download CSV voor Akeneo"}
+            {downloaded ? "Opnieuw downloaden" : "Download Excel voor Akeneo"}
           </button>
 
           <button
@@ -162,8 +162,7 @@ export default function ExportStep({ results, selectedColumns, usage, extraction
           <div className="mt-4 p-4 bg-blue-50 rounded-xl text-left text-sm text-gray-600">
             <p className="font-medium text-gray-700 mb-1">Import-instellingen:</p>
             <ul className="list-disc list-inside space-y-1 text-xs">
-              <li>Scheidingsteken: puntkomma (;)</li>
-              <li>Encoding: UTF-8</li>
+              <li>Bestandstype: xlsx</li>
               <li>Actie: Vergelijken en samenvoegen</li>
             </ul>
           </div>
